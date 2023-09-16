@@ -1,6 +1,8 @@
 """
 Tests for Tag APIs.
 """
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.test import TestCase
@@ -8,7 +10,10 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import Tag
+from core.models import (
+    Tag,
+    Recipe,
+)
 
 from recipe.serializers import TagSerializer
 
@@ -108,3 +113,78 @@ class PrivateTagsAPITests(TestCase):
         tags = Tag.objects.filter(id=tag.id)
 
         self.assertFalse(tags.exists())
+
+    def test_filter_tags_assigned_to_recipe(self):
+        """Test for filtering tags that are assigned to recipes."""
+        i1 = Tag.objects.create(
+            user=self.user,
+            name="Tag1",
+        )
+        i2 = Tag.objects.create(
+            user=self.user,
+            name="Tag2",
+        )
+        i3 = Tag.objects.create(
+            user=self.user,
+            name="Tag3"
+        )
+
+        r1 = Recipe.objects.create(
+            user=self.user,
+            title="Recipe 1",
+            time_minutes=30,
+            price=Decimal("5.99"),
+            description="Test Recipe 1",
+        )
+        r1.tags.add(i1)
+        r1.tags.add(i2)
+
+        payload = {"assigned_only": 1}
+
+        res = self.client.get(TAGS_URL, payload)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        s1 = TagSerializer(i1)
+        s2 = TagSerializer(i2)
+        s3 = TagSerializer(i3)
+
+        self.assertIn(s1.data, res.data)
+        self.assertIn(s2.data, res.data)
+        self.assertNotIn(s3.data, res.data)
+
+    def test_filtered_tags_unique(self):
+        """Test if filtered tags are unique."""
+        i1 = Tag.objects.create(
+            user=self.user,
+            name="Tag1",
+        )
+        Tag.objects.create(
+            user=self.user,
+            name="Tag2",
+        )
+
+        r1 = Recipe.objects.create(
+            user=self.user,
+            title="Recipe 1",
+            time_minutes=30,
+            price=Decimal("5.99"),
+            description="Test Recipe 1",
+        )
+        r2 = Recipe.objects.create(
+            user=self.user,
+            title="Recipe 2",
+            time_minutes=30,
+            price=Decimal("5.99"),
+            description="Test Recipe 2",
+        )
+
+        r1.tags.add(i1)
+        r2.tags.add(i1)
+
+        payload = {"assigned_only": 1}
+
+        res = self.client.get(TAGS_URL, payload)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 1)
